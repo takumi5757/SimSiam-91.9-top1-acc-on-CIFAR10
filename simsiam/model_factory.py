@@ -1,5 +1,6 @@
 from torch import nn
 from .resnet_cifar import ResNet18, ResNet34, ResNet50, ResNet101, ResNet152
+import timm
 
 
 class projection_MLP(nn.Module):
@@ -11,17 +12,17 @@ class projection_MLP(nn.Module):
         self.layer1 = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
 
         self.layer2 = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
         self.layer3 = nn.Sequential(
             nn.Linear(hidden_dim, out_dim),
-            nn.BatchNorm1d(out_dim, affine=False)  # Page:5, Paragraph:2
+            nn.BatchNorm1d(out_dim, affine=False),  # Page:5, Paragraph:2
         )
 
     def forward(self, x):
@@ -45,7 +46,7 @@ class prediction_MLP(nn.Module):
         self.layer1 = nn.Sequential(
             nn.Linear(in_dim, hidden_dim),
             nn.BatchNorm1d(hidden_dim),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
         self.layer2 = nn.Linear(hidden_dim, out_dim)
 
@@ -59,27 +60,32 @@ class prediction_MLP(nn.Module):
 class SimSiam(nn.Module):
     def __init__(self, args):
         super(SimSiam, self).__init__()
-        self.backbone = SimSiam.get_backbone(args.arch)
+        # self.backbone = SimSiam.get_backbone(args.arch)
+        self.backbone = SimSiam.get_backbone_from_timm(args.arch)
         out_dim = self.backbone.fc.weight.shape[1]
         self.backbone.fc = nn.Identity()
 
-        self.projector = projection_MLP(out_dim, args.feat_dim,
-                                        args.num_proj_layers)
+        self.projector = projection_MLP(out_dim, args.feat_dim, args.num_proj_layers)
 
-        self.encoder = nn.Sequential(
-            self.backbone,
-            self.projector
-        )
+        self.encoder = nn.Sequential(self.backbone, self.projector)
 
         self.predictor = prediction_MLP(args.feat_dim)
 
     @staticmethod
     def get_backbone(backbone_name):
-        return {'resnet18': ResNet18(),
-                'resnet34': ResNet34(),
-                'resnet50': ResNet50(),
-                'resnet101': ResNet101(),
-                'resnet152': ResNet152()}[backbone_name]
+        return {
+            "resnet18": ResNet18(),
+            "resnet34": ResNet34(),
+            "resnet50": ResNet50(),
+            "resnet101": ResNet101(),
+            "resnet152": ResNet152(),
+        }[backbone_name]
+
+    @staticmethod
+    def get_backbone_from_timm(backbone_name, low_dim=128):
+        model = timm.create_model(backbone_name, pretrained=False, num_classes=low_dim)
+
+        return model
 
     def forward(self, im_aug1, im_aug2):
 
@@ -89,11 +95,4 @@ class SimSiam(nn.Module):
         p1 = self.predictor(z1)
         p2 = self.predictor(z2)
 
-        return {'z1': z1, 'z2': z2, 'p1': p1, 'p2': p2}
-
-
-
-
-
-
-
+        return {"z1": z1, "z2": z2, "p1": p1, "p2": p2}
